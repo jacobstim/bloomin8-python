@@ -1,0 +1,7 @@
+# Core dependencies
+httpx>=0.25.0
+attrs>=23.0.0
+
+# Optional: Bluetooth wake-up support
+# Uncomment to enable Bluetooth device wake-up functionality
+bleak>=0.21.0
