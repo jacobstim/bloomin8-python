@@ -114,7 +114,7 @@ class Bloomin8:
         """Set the Bluetooth MAC address."""
         self._ble_address = value
 
-    def is_awake(self, timeout: float = 0.5) -> bool:
+    def is_awake(self, timeout: float = 1.0) -> bool:
         """Check if the device is awake and responsive.
         
         This method attempts a quick connection to the device using get_state()

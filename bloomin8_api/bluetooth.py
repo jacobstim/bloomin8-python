@@ -8,7 +8,8 @@ Requires the 'bleak' package: pip install bleak
 import asyncio
 import logging
 from typing import Optional
-
+from bleak import BleakClient
+from bleak import BleakScanner
 
 async def _scan_for_device_async(device_name: str, timeout: float = 10.0, logger: Optional[logging.Logger] = None) -> Optional[str]:
     """
@@ -25,8 +26,6 @@ async def _scan_for_device_async(device_name: str, timeout: float = 10.0, logger
     log = logger or logging.getLogger(__name__)
     
     try:
-        from bleak import BleakScanner
-        
         log.info(f"Scanning for Bluetooth device '{device_name}'...")
         devices = await BleakScanner.discover(timeout=timeout)
         
@@ -37,10 +36,7 @@ async def _scan_for_device_async(device_name: str, timeout: float = 10.0, logger
         
         log.warning(f"Device '{device_name}' not found")
         return None
-        
-    except ImportError:
-        log.error("Warning: 'bleak' package not installed. Install with: pip install bleak")
-        return None
+
     except Exception as e:
         log.error(f"Bluetooth scan error: {e}")
         return None
@@ -70,35 +66,30 @@ async def _send_wake_signal_async(address: str, logger: Optional[logging.Logger]
     WAKEUP_RESET_PAYLOAD = bytes([0x00])  # Reset wakeup function
     
     try:
-        from bleak import BleakClient
-        
-        log.info(f"Connecting to device at {address}...")
+        log.debug(f"Connecting to device at {address}...")
         async with BleakClient(address, timeout=10.0) as client:
             if client.is_connected:
                 log.debug("Connected via Bluetooth")
                 
                 # Send wake-up signal (0x01)
-                log.debug(f"Sending wake-up signal to {WAKEUP_CHARACTERISTIC_UUID}...")
+                log.debug(f"-> Sending wake-up signal to {WAKEUP_CHARACTERISTIC_UUID}...")
                 await client.write_gatt_char(WAKEUP_CHARACTERISTIC_UUID, WAKEUP_PAYLOAD)
-                log.debug("Wake-up signal sent (0x01)")
+                log.debug("-> Wake-up signal sent (0x01)")
                 
                 # Wait 100ms before sending reset
-                log.debug("Waiting 100ms...")
+                log.debug("-> Waiting 100ms...")
                 await asyncio.sleep(0.1)
                 
                 # Send reset signal (0x00)
-                log.debug(f"Sending reset signal to {WAKEUP_CHARACTERISTIC_UUID}...")
+                log.debug(f"-> ending reset signal to {WAKEUP_CHARACTERISTIC_UUID}...")
                 await client.write_gatt_char(WAKEUP_CHARACTERISTIC_UUID, WAKEUP_RESET_PAYLOAD)
-                log.debug("Reset signal sent (0x00)")
+                log.debug("-> Reset signal sent (0x00)")
                 
                 return True
             else:
                 log.error("Failed to connect via Bluetooth")
                 return False
-                
-    except ImportError:
-        log.error("Warning: 'bleak' package not installed. Install with: pip install bleak")
-        return False
+
     except Exception as e:
         log.error(f"Bluetooth connection error: {e}")
         return False
@@ -147,12 +138,10 @@ def wake_device_bluetooth(
             asyncio.set_event_loop(loop)
         
         # Find device if address not provided
-        discovered_address = None
         if device_address is None:
             device_address = loop.run_until_complete(
                 _scan_for_device_async(device_name, scan_timeout, log)
             )
-            discovered_address = device_address
             
             if device_address is None:
                 log.warning(f"Could not find device '{device_name}' via Bluetooth")
@@ -162,9 +151,9 @@ def wake_device_bluetooth(
         success = loop.run_until_complete(_send_wake_signal_async(device_address, log))
         
         if success:
-            log.info("Wake signal sent successfully. Device should now be awake.")
+            log.debug("Wake signal sent successfully. Device should now be awake.")
         
-        return success, discovered_address
+        return success, device_address
         
     except Exception as e:
         log.error(f"Bluetooth wake-up failed: {e}")

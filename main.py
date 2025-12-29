@@ -64,7 +64,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--device-name",
         default="BLOOMIN8",
-        help="Bluetooth device name to search for during wake-up",
+        help="Full or partial Bluetooth device name to search for during wake-up",
     )
     parser.add_argument(
         "--ble-address",
@@ -140,17 +140,17 @@ def main() -> int:
         # Attempt Bluetooth wake-up if not disabled
         if not args.no_wakeup:
             # Check if device is already awake with fast timeout
-            logger.debug("Checking if device is awake...")
+            logger.info("Checking if device is awake...")
             
             if device.is_awake(timeout=0.2):
-                logger.info("Device is already awake, skipping Bluetooth wake-up.")
+                logger.info("-> Device is already awake, skipping Bluetooth wake-up.")
             else:
-                logger.info("Device appears to be asleep, attempting Bluetooth wake-up...")
+                logger.info("-> Device appears to be asleep, attempting Bluetooth wake-up...")
                 device.wake_device()
                 
                 # Display discovered BLE address if available
                 if device.ble_address:
-                    logger.debug(f"BLE Address: {device.ble_address}")
+                    logger.info(f"-> BLE Address: {device.ble_address}")
 
         # Get list of galleries from device
         logger.info(f"Connecting to {args.host}:{args.port}...")
@@ -246,119 +246,138 @@ def main() -> int:
             logger.info("  (none)")
         
         logger.info("\n" + "=" * 60)
-        
-        # Ask for confirmation unless --force is used
-        if not args.force:
-            # If there are no changes, don't prompt
-            files_to_delete = removed_files if args.mirror else []
-            if not new_files and not files_to_delete:
-                logger.info("\nNo changes to synchronize. Everything is up to date.")
-                return 0
-            
-            # Prompt for confirmation
-            try:
-                response = input("\nProceed with synchronization? [y/N]: ").strip().lower()
-                if response not in ['y', 'yes']:
-                    logger.info("Synchronization cancelled.")
-                    return 0
-            except (KeyboardInterrupt, EOFError):
-                logger.info("\nSynchronization cancelled.")
-                return 0
-        else:
-            logger.info("\n--force flag set, proceeding without confirmation...")
 
-        # Start synchronization
-        logger.info("\n" + "=" * 60)
-        logger.info("STARTING SYNCHRONIZATION")
-        logger.info("=" * 60)
-        
-        total_bytes = 0
-        uploaded_count = 0
-        deleted_count = 0
-        start_time = time.time()
-        
-        # Delete removed files if mirror mode is enabled
-        if args.mirror and removed_files:
-            logger.info(f"\nDeleting {len(removed_files)} removed file(s) from device...")
-            
-            for idx, filename in enumerate(removed_files, 1):
-                logger.info(f"\n[{idx}/{len(removed_files)}] Deleting {filename}...")
-                
+        # Let's start from a clean slate
+        has_failures = False
+
+        # Do we need to delete files?
+        files_to_delete = removed_files if args.mirror else []
+
+        # So, do we have work?
+        if not new_files and not files_to_delete:
+            logger.info("\nNo changes to synchronize. Everything is up to date.")
+        else:
+            # We have work to do; ask for confirmation unless --force is used
+            continue_sync = False
+            if not args.force:
+                # Prompt for confirmation
                 try:
-                    delete_start = time.time()
-                    
-                    # Delete the image using the delete API
-                    response = device.images.delete(image=filename, gallery=args.gallery)
-                    
-                    delete_time = time.time() - delete_start
-                    logger.info(f"    ✓ Deleted in {delete_time:.2f}s")
-                    deleted_count += 1
-                    
-                except Exception as e:
-                    logger.error(f"    ✗ Failed to delete {filename}: {e}")
-        
-        # Upload new files
-        if new_files:
-            logger.info(f"\nUploading {len(new_files)} new file(s)...")
-            
-            for idx, file_path in enumerate(new_files, 1):
-                file_size = file_path.stat().st_size
-                total_bytes += file_size
-                
-                # Create progress indicator
-                file_size_mb = file_size / (1024 * 1024)
-                logger.info(f"\n[{idx}/{len(new_files)}] Uploading {file_path.name} ({file_size_mb:.2f} MB)...")
-                
-                try:
-                    upload_start = time.time()
-                    
-                    # Upload the image using the simplified API
-                    response = device.images.upload_from_file(file_path, args.gallery)
-        
-                    upload_time = time.time() - upload_start
-                    upload_speed = (file_size / 1024 / 1024) / upload_time if upload_time > 0 else 0                    
-                    logger.info(f"    ✓ Uploaded in {upload_time:.2f}s ({upload_speed:.2f} MB/s)")
-                    uploaded_count += 1
-                    
-                except Exception as e:
-                    logger.error(f"    ✗ Failed to upload {file_path.name}: {e}")
-        
-        # Calculate and display statistics
-        total_time = time.time() - start_time
-        
-        logger.info("\n" + "=" * 60)
-        logger.info("SYNCHRONIZATION COMPLETE")
-        logger.info("=" * 60)
-        
-        logger.info(f"\nFiles uploaded: {uploaded_count}/{len(new_files)}")
-        
-        if args.mirror and removed_files:
-            logger.info(f"Files deleted: {deleted_count}/{len(removed_files)}")
-        
-        if total_time > 0 and total_bytes > 0:
-            total_mb = total_bytes / (1024 * 1024)
-            avg_speed_mbps = (total_mb / total_time) if total_time > 0 else 0
-            avg_speed_kbps = avg_speed_mbps * 1024
-            
-            logger.info(f"Total time: {total_time:.2f} seconds")
-            logger.info(f"Total data transferred: {total_mb:.2f} MB")
-            
-            if avg_speed_mbps >= 1:
-                logger.info(f"Average upload speed: {avg_speed_mbps:.2f} MB/s")
+                    response = input("\nProceed with synchronization? [y/N]: ").strip().lower()
+                    if response not in ['y', 'yes']:
+                        logger.info("Synchronization cancelled.")
+                        continue_sync = False;
+                    else:
+                        continue_sync = True;
+                except (KeyboardInterrupt, EOFError):
+                    logger.info("\nSynchronization cancelled.")
+                    continue_sync = False;
             else:
-                logger.info(f"Average upload speed: {avg_speed_kbps:.2f} KB/s")
+                logger.info("\n--force flag set, proceeding without confirmation...")
+                continue_sync = True
+
+            # User agrees we need to do work, let's go!
+            if continue_sync:
+                # Start synchronization
+                logger.info("\n" + "=" * 60)
+                logger.info("STARTING SYNCHRONIZATION")
+                logger.info("=" * 60)
+                
+                total_bytes = 0
+                uploaded_count = 0
+                deleted_count = 0
+                start_time = time.time()
+                
+                # Delete removed files if mirror mode is enabled
+                if args.mirror and removed_files:
+                    logger.info(f"\nDeleting {len(removed_files)} removed file(s) from device...")
+                    
+                    for idx, filename in enumerate(removed_files, 1):
+                        logger.info(f"\n[{idx}/{len(removed_files)}] Deleting {filename}...")
+                        
+                        try:
+                            delete_start = time.time()
+                            
+                            # Delete the image using the delete API
+                            response = device.images.delete(image=filename, gallery=args.gallery)
+                            
+                            delete_time = time.time() - delete_start
+                            logger.info(f"    ✓ Deleted in {delete_time:.2f}s")
+                            deleted_count += 1
+                            
+                        except Exception as e:
+                            logger.error(f"    ✗ Failed to delete {filename}: {e}")
+                
+                # Upload new files
+                if new_files:
+                    logger.info(f"\nUploading {len(new_files)} new file(s)...")
+                    
+                    for idx, file_path in enumerate(new_files, 1):
+                        file_size = file_path.stat().st_size
+                        total_bytes += file_size
+                        
+                        # Create progress indicator
+                        file_size_mb = file_size / (1024 * 1024)
+                        logger.info(f"\n[{idx}/{len(new_files)}] Uploading {file_path.name} ({file_size_mb:.2f} MB)...")
+                        
+                        try:
+                            upload_start = time.time()
+                            
+                            # Upload the image using the simplified API
+                            response = device.images.upload_from_file(file_path, args.gallery)
+                
+                            upload_time = time.time() - upload_start
+                            upload_speed = (file_size / 1024 / 1024) / upload_time if upload_time > 0 else 0                    
+                            logger.info(f"    ✓ Uploaded in {upload_time:.2f}s ({upload_speed:.2f} MB/s)")
+                            uploaded_count += 1
+                            
+                        except Exception as e:
+                            logger.error(f"    ✗ Failed to upload {file_path.name}: {e}")
+                
+                # Calculate and display statistics
+                total_time = time.time() - start_time
+                
+                logger.info("\n" + "=" * 60)
+                logger.info("SYNCHRONIZATION COMPLETE")
+                logger.info("=" * 60)
+                
+                logger.info(f"\nFiles uploaded: {uploaded_count}/{len(new_files)}")
+                
+                if args.mirror and removed_files:
+                    logger.info(f"Files deleted: {deleted_count}/{len(removed_files)}")
+                
+                if total_time > 0 and total_bytes > 0:
+                    total_mb = total_bytes / (1024 * 1024)
+                    avg_speed_mbps = (total_mb / total_time) if total_time > 0 else 0
+                    avg_speed_kbps = avg_speed_mbps * 1024
+                    
+                    logger.info(f"Total time: {total_time:.2f} seconds")
+                    logger.info(f"Total data transferred: {total_mb:.2f} MB")
+                    
+                    if avg_speed_mbps >= 1:
+                        logger.info(f"Average upload speed: {avg_speed_mbps:.2f} MB/s")
+                    else:
+                        logger.info(f"Average upload speed: {avg_speed_kbps:.2f} KB/s")
+                
+                # Check for failures
+                has_failures = uploaded_count < len(new_files)
+                if args.mirror and removed_files:
+                    has_failures = has_failures or (deleted_count < len(removed_files))
+                
+                if has_failures:
+                    if uploaded_count < len(new_files):
+                        logger.warning(f"\nWarning: {len(new_files) - uploaded_count} file(s) failed to upload")
+                    if args.mirror and removed_files and deleted_count < len(removed_files):
+                        logger.warning(f"Warning: {len(removed_files) - deleted_count} file(s) failed to delete")
+                
+        # Put device back to sleep
+        logger.info("\nPutting device to sleep...")
+        try:
+            device.system.sleep()
+            logger.debug("-> Device is now sleeping.")
+        except Exception as e:
+            logger.warning(f"Failed to put device to sleep: {e}")
         
-        # Check for failures
-        has_failures = uploaded_count < len(new_files)
-        if args.mirror and removed_files:
-            has_failures = has_failures or (deleted_count < len(removed_files))
-        
-        if has_failures:
-            if uploaded_count < len(new_files):
-                logger.warning(f"\nWarning: {len(new_files) - uploaded_count} file(s) failed to upload")
-            if args.mirror and removed_files and deleted_count < len(removed_files):
-                logger.warning(f"Warning: {len(removed_files) - deleted_count} file(s) failed to delete")
-            return 1
+        return 1 if has_failures else 0
 
     except DeviceUnreachableError as e:
         logger.error(f"Error: {e}")
@@ -366,8 +385,6 @@ def main() -> int:
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
         return 1
-
-    return 0
 
 
 if __name__ == "__main__":

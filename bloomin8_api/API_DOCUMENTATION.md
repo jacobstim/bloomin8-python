@@ -1,6 +1,6 @@
 # Bloomin8 API Module
 
-A clean, intuitive Python interface for interacting with Bloomin8 devices.
+A Python interface for interacting with Bloomin8 devices.
 
 ## Overview
 

@@ -10,7 +10,7 @@ Example:
     >>> galleries = device.galleries.list()
 """
 
-from .client import Bloomin8
+from .bloomin8 import Bloomin8
 from .types import DeviceInfo, NetworkType
 from .bluetooth import wake_device_bluetooth
 from .bloomin8_client.errors import DeviceUnreachableError
