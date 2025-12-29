@@ -80,10 +80,6 @@ device = Bloomin8("10.0.0.41")
 info = device.system.get_device_info()
 print(f"Device: {info.name}, Version: {info.version}")
 
-# Get current state
-state = device.system.get_state()
-print(f"Current state: {state}")
-
 # Show next item
 device.system.show_next()
 
