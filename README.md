@@ -8,6 +8,12 @@ Perform synchronization of a local folder to the BLOOMIN8 device at IP address 1
 python main.py --source P:\Pictureframe\device --host 10.0.0.70
 ```
 
+By default, all files are synced to a `bloomin8-sync` gallery on the device. You can specify your own gallery name using the `gallery` option, e.g.:
+
+```python
+python main.py --source P:\Pictureframe\device --host 10.0.0.70 --gallery "default"
+```
+
 If you want the device to be awakened, you can use the Bluetooth name you specify in the Mobile App; this will do a Bluetooth discovery and search for the BLE device with this name.
 
 ```python

@@ -142,7 +142,7 @@ def main() -> int:
             # Check if device is already awake with fast timeout
             logger.info("Checking if device is awake...")
             
-            if device.is_awake(timeout=0.2):
+            if device.is_awake():
                 logger.info("-> Device is already awake, skipping Bluetooth wake-up.")
             else:
                 logger.info("-> Device appears to be asleep, attempting Bluetooth wake-up...")
@@ -160,8 +160,7 @@ def main() -> int:
         target_gallery = None
         if galleries is not None:
             logger.info(f"Found {len(galleries)} gallery(ies) on device:")
-            for gallery in galleries:
-                
+            for gallery in galleries:              
                 # Check if this is our target gallery
                 if gallery.name == args.gallery:
                     target_gallery = gallery
@@ -208,7 +207,7 @@ def main() -> int:
 
         # Create sets of filenames for comparison
         local_filenames = {f.name for f in local_files}
-        device_filenames = {img.name for img in device_images if hasattr(img, 'name')}
+        device_filenames = {img.name for img in device_images}
         
         # Categorize files
         new_files = [f for f in local_files if f.name not in device_filenames]
@@ -238,23 +237,30 @@ def main() -> int:
         else:
             logger.info("  (none)")
         
-        logger.info(f"\nFiles to remove from device ({len(removed_files)}):")
-        if removed_files:
-            for name in removed_files:
-                logger.info(f"  - {name}")
+        if args.mirror:
+            logger.info(f"\nFiles to remove from device ({len(removed_files)}):")
+            if removed_files:
+                for name in removed_files:
+                    logger.info(f"  - {name}")
+            else:
+                logger.info("  (none)")
         else:
-            logger.info("  (none)")
-        
+            logger.info(f"\nFiles that will remain on device ({len(removed_files)}):")
+            if removed_files:
+                for name in removed_files:
+                    logger.info(f"  - {name}")
+            else:
+                logger.info("  (none)")
+            # Now forget about the files...
+            removed_files = []
+
         logger.info("\n" + "=" * 60)
 
         # Let's start from a clean slate
         has_failures = False
 
-        # Do we need to delete files?
-        files_to_delete = removed_files if args.mirror else []
-
         # So, do we have work?
-        if not new_files and not files_to_delete:
+        if not new_files and not removed_files:
             logger.info("\nNo changes to synchronize. Everything is up to date.")
         else:
             # We have work to do; ask for confirmation unless --force is used
@@ -369,14 +375,19 @@ def main() -> int:
                     if args.mirror and removed_files and deleted_count < len(removed_files):
                         logger.warning(f"Warning: {len(removed_files) - deleted_count} file(s) failed to delete")
                 
-        # Put device back to sleep
-        logger.info("\nPutting device to sleep...")
-        try:
-            device.system.sleep()
-            logger.debug("-> Device is now sleeping.")
-        except Exception as e:
-            logger.warning(f"Failed to put device to sleep: {e}")
-        
+        # Put device back to sleep, but only if we woke it up...
+        if not args.no_wakeup:
+            logger.info("\nPutting device to sleep...")
+            if device.is_awake():
+                try:
+                    device.system.sleep()
+                    logger.debug("-> Device is now sleeping.")
+                except Exception as e:
+                    logger.warning(f"Failed to put device to sleep: {e}")
+            else:
+                logger.debug("-> Device was already asleep.")        
+
+        # That's all for today!
         return 1 if has_failures else 0
 
     except DeviceUnreachableError as e:
