@@ -14,8 +14,9 @@ Example:
 """
 
 from enum import Enum
-from typing import Optional, TypeVar, Callable, Any
+from typing import Optional, TypeVar, Callable, Any, Union
 from functools import wraps
+from pathlib import Path
 import logging
 
 import httpx
@@ -24,6 +25,8 @@ import httpcore
 from .bloomin8_client.client import Client
 from .bloomin8_client.errors import DeviceUnreachableError
 from .bloomin8_client.models.get_device_info_response_200 import GetDeviceInfoResponse200
+from .bloomin8_client.types import File
+from .bloomin8_client.models.post_upload_body import PostUploadBody
 from .bloomin8_client.api.system_ap_is import (
     get_device_info,
     get_state,
@@ -594,6 +597,59 @@ class ImageManager:
         @self._handle_errors
         def _call():
             return post_image_delete.sync(client=self._client, body=body)
+        return _call()
+    
+    def upload_from_file(self, file_path: Union[str, Path], gallery_name: str):
+        """
+        Upload an image file from the local filesystem to the device.
+        
+        This is a convenience method that handles reading the file and creating
+        the appropriate upload request.
+        
+        Args:
+            file_path: Path to the image file (string or Path object)
+            gallery_name: Name of the gallery to upload to
+            
+        Returns:
+            Response from the device
+            
+        Raises:
+            DeviceUnreachableError: If the device cannot be reached
+            FileNotFoundError: If the file does not exist
+            IOError: If there's an error reading the file
+            
+        Example:
+            >>> device = Bloomin8("10.0.0.41")
+            >>> device.images.upload_from_file("/path/to/photo.jpg", "my_gallery")
+        """
+        # Convert to Path object if string
+        if isinstance(file_path, str):
+            file_path = Path(file_path)
+        
+        # Verify file exists
+        if not file_path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+        
+        if not file_path.is_file():
+            raise ValueError(f"Path is not a file: {file_path}")
+        
+        # Read the file
+        with open(file_path, 'rb') as f:
+            image_data = f.read()
+        
+        # Create File object and upload body
+        file_obj = File(payload=image_data, file_name=file_path.name)
+        upload_body = PostUploadBody(image=file_obj)
+        
+        # Upload using the API endpoint directly with proper parameters
+        @self._handle_errors
+        def _call():
+            return post_upload.sync_detailed(
+                client=self._client,
+                body=upload_body,
+                filename=file_path.name,
+                gallery=gallery_name
+            )
         return _call()
 
 

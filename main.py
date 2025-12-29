@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """
-Command-line script to retrieve the list of images from a Bloomin8 device.
+Bloomin8 Image Synchronization Tool
 
-This script connects to a Bloomin8 device and retrieves the list of galleries
-(which contain images) stored on the device.
+This script synchronizes images from a local folder to a Bloomin8 device.
+It manages galleries and uploads images to keep the device in sync with your local collection.
 """
 
 import argparse
 import logging
 import sys
-from typing import Optional
+import time
+from pathlib import Path
 
-from bloomin8_api import Bloomin8, DeviceUnreachableError, DeviceInfo
+from bloomin8_api import Bloomin8, DeviceUnreachableError
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ def parse_arguments() -> argparse.Namespace:
         Parsed arguments namespace
     """
     parser = argparse.ArgumentParser(
-        description="Retrieve information and galleries from a Bloomin8 device",
+        description="Synchronize images from a local folder to a Bloomin8 device",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
@@ -45,6 +46,17 @@ def parse_arguments() -> argparse.Namespace:
         help="Use HTTPS instead of HTTP",
     )
     parser.add_argument(
+        "--source",
+        type=Path,
+        required=True,
+        help="Source folder containing images to sync",
+    )
+    parser.add_argument(
+        "--gallery",
+        default="bloomin8-sync",
+        help="Gallery name to synchronize to on the device",
+    )
+    parser.add_argument(
         "--no-wakeup",
         action="store_true",
         help="Skip Bluetooth wake-up attempt (default: attempt wake-up)",
@@ -60,147 +72,17 @@ def parse_arguments() -> argparse.Namespace:
         help="Bluetooth MAC address (skips scanning if provided)",
     )
     parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Skip confirmation prompt and proceed with synchronization",
+    )
+    parser.add_argument(
         "-v", "--verbose",
         action="store_true",
         help="Enable verbose output",
     )
     
     return parser.parse_args()
-
-
-def display_device_info(device_info: DeviceInfo) -> None:
-    """
-    Display device information in a formatted manner.
-    
-    Args:
-        device_info: DeviceInfo object to display
-    """
-    print("=" * 60)
-    print("DEVICE INFORMATION")
-    print("=" * 60)
-    
-    # Basic info
-    if device_info.name:
-        print(f"Device Name:      {device_info.name}")
-    if device_info.version:
-        print(f"Version:          {device_info.version}")
-    
-    # Hardware info
-    if device_info.board_model:
-        print(f"Board Model:      {device_info.board_model}")
-    if device_info.screen_model:
-        print(f"Screen Model:     {device_info.screen_model}")
-    if device_info.width and device_info.height:
-        print(f"Display Size:     {device_info.width} x {device_info.height}")
-    
-    # Network info
-    if device_info.ip_address:
-        print(f"IP Address:       {device_info.ip_address}")
-    if device_info.ssid:
-        print(f"WiFi SSID:        {device_info.ssid}")
-    if device_info.network_type:
-        print(f"Network Type:     {device_info.network_type}")
-    
-    # Storage info
-    if device_info.total_size:
-        total_gb = device_info.total_size / (1024**3)
-        print(f"Total Storage:    {total_gb:.2f} GB")
-    if device_info.free_size:
-        free_gb = device_info.free_size / (1024**3)
-        print(f"Free Storage:     {free_gb:.2f} GB")
-    
-    # Battery and power
-    if device_info.battery is not None:
-        print(f"Battery:          {device_info.battery}%")
-    
-    # Current display info
-    if device_info.gallery:
-        print(f"Current Gallery:  {device_info.gallery}")
-    if device_info.image:
-        print(f"Current Image:    {device_info.image}")
-    if device_info.play_type is not None:
-        play_types = {0: "Single Image", 1: "Gallery Slideshow", 2: "Playlist"}
-        print(f"Play Type:        {play_types.get(device_info.play_type, f'Unknown ({device_info.play_type})')}")
-    
-    # Sleep settings
-    if device_info.sleep_duration:
-        sleep_hours = device_info.sleep_duration / 3600
-        print(f"Sleep Duration:   {sleep_hours:.1f} hours")
-    if device_info.max_idle:
-        print(f"Max Idle Time:    {device_info.max_idle} seconds")
-    
-    print()
-
-
-def display_galleries(galleries: list) -> None:
-    """
-    Display gallery list in a formatted manner.
-    
-    Args:
-        galleries: List of gallery objects to display
-    """
-    print("=" * 60)
-    print("GALLERIES")
-    print("=" * 60)
-    
-    if not galleries:
-        print("No galleries found on the device")
-        return
-    
-    print(f"\nFound {len(galleries)} gallery(ies):\n")
-    for idx, gallery in enumerate(galleries, 1):
-        print(f"  Gallery {idx}:")
-        if hasattr(gallery, "id"):
-            print(f"    ID:     {gallery.id}")
-        if hasattr(gallery, "name"):
-            print(f"    Name:   {gallery.name}")
-        if hasattr(gallery, "image_count"):
-            print(f"    Images: {gallery.image_count}")
-        print()
-    
-    print("=" * 60)
-
-
-def display_gallery_images(device: Bloomin8, gallery) -> None:
-    """Display images for a single gallery.
-    
-    Args:
-        device: Bloomin8 device instance
-        gallery: Single gallery object
-    """
-    gallery_name = gallery.name if hasattr(gallery, 'name') else gallery.id if hasattr(gallery, 'id') else "Unknown"
-    
-    print("=" * 60)
-    print(f"IMAGES IN GALLERY: {gallery_name}")
-    print("=" * 60)
-    print()
-    
-    try:
-        images = device.galleries.get_images(gallery_name)
-        
-        if images:
-            print(f"  Total images: {len(images)}")
-            print()
-            for img_idx, image in enumerate(images, 1):
-                print(f"  Image {img_idx}:")
-                if hasattr(image, 'name'):
-                    print(f"    Name: {image.name}")
-                if hasattr(image, 'width') and hasattr(image, 'height'):
-                    print(f"    Size: {image.width}x{image.height}")
-                if hasattr(image, 'size'):
-                    size_kb = image.size / 1024
-                    print(f"    File Size: {size_kb:.2f} KB")
-                print()
-        else:
-            print(f"  No images found")
-            print()
-    
-    except Exception as e:
-        print(f"  Error retrieving images: {e}")
-        print()
-    
-    print("=" * 60)
-    print()
 
 
 def main() -> int:
@@ -228,6 +110,16 @@ def main() -> int:
     logging.getLogger('httpcore').setLevel(logging.WARNING)
     logging.getLogger('bleak').setLevel(logging.WARNING)
 
+    # Validate source folder
+    if not args.source.exists():
+        logger.error(f"Source folder does not exist: {args.source}")
+        return 1
+    
+    if not args.source.is_dir():
+        logger.error(f"Source path is not a directory: {args.source}")
+        return 1
+
+    logger.info(f"Source folder: {args.source}")
 
     try:
         # Create the Bloomin8 device instance with BLE parameters
@@ -243,37 +135,191 @@ def main() -> int:
         # Attempt Bluetooth wake-up if not disabled
         if not args.no_wakeup:
             # Check if device is already awake with fast timeout
-            logger.info("Checking if device is awake...")
+            logger.debug("Checking if device is awake...")
             
-            if device.is_awake():
-                logger.info("-> Device is already awake, skipping Bluetooth wake-up.")
+            if device.is_awake(timeout=0.2):
+                logger.info("Device is already awake, skipping Bluetooth wake-up.")
             else:
-                logger.info("-> Device appears to be asleep, attempting Bluetooth wake-up...")
+                logger.info("Device appears to be asleep, attempting Bluetooth wake-up...")
                 device.wake_device()
                 
                 # Display discovered BLE address if available
                 if device.ble_address:
-                    logger.debug(f"-> BLE Address: {device.ble_address}")
+                    logger.debug(f"BLE Address: {device.ble_address}")
 
-        # Get and display device information
-        logger.info(f"Retrieving device information from {args.host}:{args.port}...")
-
-        device_info = device.system.get_device_info()
-        if device_info:
-            display_device_info(device_info)
-        else:
-            logger.error("Could not retrieve device information")
-            print()
-
-        # Get and display galleries
+        # Get list of galleries from device
+        logger.info(f"Connecting to {args.host}:{args.port}...")
+        logger.info("Retrieving galleries from device...")
         galleries = device.galleries.list()
+        
+        target_gallery = None
         if galleries is not None:
-            display_galleries(galleries)
-            # Display images for each gallery
+            logger.info(f"Found {len(galleries)} gallery(ies) on device:")
             for gallery in galleries:
-                display_gallery_images(device, gallery)
+                
+                # Check if this is our target gallery
+                if gallery.name == args.gallery:
+                    target_gallery = gallery
+                    marker = " [TARGET]" 
+                else:
+                    marker = ""
+
+                # Get image list per gallery
+                try:
+                    images = device.galleries.get_images(gallery.name)
+                    image_count = len(images) if images else 0
+                    logger.info(f"  - {gallery.name} ({image_count} images){marker}")
+                except Exception as e:
+                    logger.debug(f"  - {gallery.name} (could not retrieve image count: {e})")
+                    logger.info(f"  - {gallery.name}{marker}")
         else:
             logger.error("Failed to retrieve galleries from device")
+            return 1
+        
+        # Check if target gallery exists
+        if target_gallery is None:
+            logger.info(f"\nTarget gallery '{args.gallery}' not found on device.")
+            device_images = []
+        else:
+            logger.info(f"\nTarget gallery '{args.gallery}' found on device.")
+            # Get images from the target gallery
+            try:
+                device_images = device.galleries.get_images(args.gallery)
+                logger.debug(f"Retrieved {len(device_images)} images from target gallery")
+            except Exception as e:
+                logger.error(f"Failed to retrieve images from target gallery: {e}")
+                return 1
+
+        # Scan local source folder for image files
+        logger.info(f"\nScanning source folder: {args.source}")
+        supported_extensions = {'.jpg', '.jpeg'}            # '.png', '.gif', '.bmp', '.webp'
+        local_files = []
+        
+        for file_path in args.source.iterdir():
+            if file_path.is_file() and file_path.suffix.lower() in supported_extensions:
+                local_files.append(file_path)
+        
+        logger.info(f"-> Found {len(local_files)} image file(s) in source folder")
+
+        # Create sets of filenames for comparison
+        local_filenames = {f.name for f in local_files}
+        device_filenames = {img.name for img in device_images if hasattr(img, 'name')}
+        
+        # Categorize files
+        new_files = [f for f in local_files if f.name not in device_filenames]
+        existing_files = [f for f in local_files if f.name in device_filenames]
+        removed_files = [name for name in device_filenames if name not in local_filenames]
+        
+        # Display overview
+        logger.info("\n" + "=" * 60)
+        logger.info("SYNCHRONIZATION OVERVIEW")
+        logger.info("=" * 60)
+        
+        # Show gallery creation notice if target gallery doesn't exist
+        if target_gallery is None:
+            logger.info(f"\nGallery to create: {args.gallery}")
+        
+        logger.info(f"\nNew files to upload ({len(new_files)}):")
+        if new_files:
+            for f in new_files:
+                logger.info(f"  + {f.name}")
+        else:
+            logger.info("  (none)")
+        
+        logger.info(f"\nExisting files (already on device) ({len(existing_files)}):")
+        if existing_files:
+            for f in existing_files:
+                logger.info(f"  = {f.name}")
+        else:
+            logger.info("  (none)")
+        
+        logger.info(f"\nFiles to remove from device ({len(removed_files)}):")
+        if removed_files:
+            for name in removed_files:
+                logger.info(f"  - {name}")
+        else:
+            logger.info("  (none)")
+        
+        logger.info("\n" + "=" * 60)
+        
+        # Ask for confirmation unless --force is used
+        if not args.force:
+            # If there are no changes, don't prompt
+            if not new_files and not removed_files:
+                logger.info("\nNo changes to synchronize. Everything is up to date.")
+                return 0
+            
+            # Prompt for confirmation
+            try:
+                response = input("\nProceed with synchronization? [y/N]: ").strip().lower()
+                if response not in ['y', 'yes']:
+                    logger.info("Synchronization cancelled.")
+                    return 0
+            except (KeyboardInterrupt, EOFError):
+                logger.info("\nSynchronization cancelled.")
+                return 0
+        else:
+            logger.info("\n--force flag set, proceeding without confirmation...")
+
+        # Start synchronization
+        logger.info("\n" + "=" * 60)
+        logger.info("STARTING SYNCHRONIZATION")
+        logger.info("=" * 60)
+        
+        total_bytes = 0
+        uploaded_count = 0
+        start_time = time.time()
+        
+        # Upload new files
+        if new_files:
+            logger.info(f"\nUploading {len(new_files)} new file(s)...")
+            
+            for idx, file_path in enumerate(new_files, 1):
+                file_size = file_path.stat().st_size
+                total_bytes += file_size
+                
+                # Create progress indicator
+                file_size_mb = file_size / (1024 * 1024)
+                logger.info(f"\n[{idx}/{len(new_files)}] Uploading {file_path.name} ({file_size_mb:.2f} MB)...")
+                
+                try:
+                    upload_start = time.time()
+                    
+                    # Upload the image using the simplified API
+                    response = device.images.upload_from_file(file_path, args.gallery)
+        
+                    upload_time = time.time() - upload_start
+                    upload_speed = (file_size / 1024 / 1024) / upload_time if upload_time > 0 else 0                    
+                    logger.info(f"    ✓ Uploaded in {upload_time:.2f}s ({upload_speed:.2f} MB/s)")
+                    uploaded_count += 1
+                    
+                except Exception as e:
+                    logger.error(f"    ✗ Failed to upload {file_path.name}: {e}")
+        
+        # Calculate and display statistics
+        total_time = time.time() - start_time
+        
+        logger.info("\n" + "=" * 60)
+        logger.info("SYNCHRONIZATION COMPLETE")
+        logger.info("=" * 60)
+        
+        logger.info(f"\nFiles uploaded: {uploaded_count}/{len(new_files)}")
+        
+        if total_time > 0 and total_bytes > 0:
+            total_mb = total_bytes / (1024 * 1024)
+            avg_speed_mbps = (total_mb / total_time) if total_time > 0 else 0
+            avg_speed_kbps = avg_speed_mbps * 1024
+            
+            logger.info(f"Total time: {total_time:.2f} seconds")
+            logger.info(f"Total data transferred: {total_mb:.2f} MB")
+            
+            if avg_speed_mbps >= 1:
+                logger.info(f"Average upload speed: {avg_speed_mbps:.2f} MB/s")
+            else:
+                logger.info(f"Average upload speed: {avg_speed_kbps:.2f} KB/s")
+        
+        if uploaded_count < len(new_files):
+            logger.warning(f"\nWarning: {len(new_files) - uploaded_count} file(s) failed to upload")
             return 1
 
     except DeviceUnreachableError as e:
