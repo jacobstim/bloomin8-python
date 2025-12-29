@@ -77,6 +77,11 @@ def parse_arguments() -> argparse.Namespace:
         help="Skip confirmation prompt and proceed with synchronization",
     )
     parser.add_argument(
+        "--mirror",
+        action="store_true",
+        help="Mirror mode: delete images from device that are not in source folder",
+    )
+    parser.add_argument(
         "-v", "--verbose",
         action="store_true",
         help="Enable verbose output",
@@ -245,7 +250,8 @@ def main() -> int:
         # Ask for confirmation unless --force is used
         if not args.force:
             # If there are no changes, don't prompt
-            if not new_files and not removed_files:
+            files_to_delete = removed_files if args.mirror else []
+            if not new_files and not files_to_delete:
                 logger.info("\nNo changes to synchronize. Everything is up to date.")
                 return 0
             
@@ -268,7 +274,28 @@ def main() -> int:
         
         total_bytes = 0
         uploaded_count = 0
+        deleted_count = 0
         start_time = time.time()
+        
+        # Delete removed files if mirror mode is enabled
+        if args.mirror and removed_files:
+            logger.info(f"\nDeleting {len(removed_files)} removed file(s) from device...")
+            
+            for idx, filename in enumerate(removed_files, 1):
+                logger.info(f"\n[{idx}/{len(removed_files)}] Deleting {filename}...")
+                
+                try:
+                    delete_start = time.time()
+                    
+                    # Delete the image using the delete API
+                    response = device.images.delete(image=filename, gallery=args.gallery)
+                    
+                    delete_time = time.time() - delete_start
+                    logger.info(f"    ✓ Deleted in {delete_time:.2f}s")
+                    deleted_count += 1
+                    
+                except Exception as e:
+                    logger.error(f"    ✗ Failed to delete {filename}: {e}")
         
         # Upload new files
         if new_files:
@@ -305,6 +332,9 @@ def main() -> int:
         
         logger.info(f"\nFiles uploaded: {uploaded_count}/{len(new_files)}")
         
+        if args.mirror and removed_files:
+            logger.info(f"Files deleted: {deleted_count}/{len(removed_files)}")
+        
         if total_time > 0 and total_bytes > 0:
             total_mb = total_bytes / (1024 * 1024)
             avg_speed_mbps = (total_mb / total_time) if total_time > 0 else 0
@@ -318,8 +348,16 @@ def main() -> int:
             else:
                 logger.info(f"Average upload speed: {avg_speed_kbps:.2f} KB/s")
         
-        if uploaded_count < len(new_files):
-            logger.warning(f"\nWarning: {len(new_files) - uploaded_count} file(s) failed to upload")
+        # Check for failures
+        has_failures = uploaded_count < len(new_files)
+        if args.mirror and removed_files:
+            has_failures = has_failures or (deleted_count < len(removed_files))
+        
+        if has_failures:
+            if uploaded_count < len(new_files):
+                logger.warning(f"\nWarning: {len(new_files) - uploaded_count} file(s) failed to upload")
+            if args.mirror and removed_files and deleted_count < len(removed_files):
+                logger.warning(f"Warning: {len(removed_files) - deleted_count} file(s) failed to delete")
             return 1
 
     except DeviceUnreachableError as e:

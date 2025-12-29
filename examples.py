@@ -11,10 +11,10 @@ def example_usage():
     """Demonstrate various operations with the Bloomin8 API."""
     
     # Initialize connection to the device
-    device = Bloomin8("10.0.0.41")
+    device = Bloomin8("10.0.0.70")
     
     # Alternative: specify custom port and HTTPS
-    # device = Bloomin8("10.0.0.41", port=8080, use_https=True)
+    # device = Bloomin8("10.0.0.70", port=8080, use_https=True)
     
     print("=" * 60)
     print("SYSTEM OPERATIONS")
@@ -41,7 +41,7 @@ def example_usage():
     # Put device to sleep
     # device.system.sleep()
     
-    # Reboot device (use with caution!)
+    # Reboot device 
     # device.system.reboot()
     
     print("\n" + "=" * 60)
@@ -111,9 +111,8 @@ def example_usage():
     
     # Delete an image
     print("\n11. Delete Image:")
-    # delete_data = {"gallery_name": "my_gallery", "image_id": "123"}
-    # device.images.delete(delete_data)
-    print("   (Commented out - provide gallery_name and image_id)")
+    # device.images.delete(image="image.jpg", gallery="my_gallery")
+    print("   (Commented out - provide image filename and gallery name)")
     
     print("\n" + "=" * 60)
     print("PLAYLIST OPERATIONS")
